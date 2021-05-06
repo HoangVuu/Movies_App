@@ -5,14 +5,20 @@ import {
   StyleSheet,
   TouchableWithoutFeedback,
   Keyboard,
+  Platform,
 } from 'react-native';
 import {Button} from 'react-native-elements';
 import Bg from '../../assets/images/background.jpg';
 import {TextInput} from 'react-native-gesture-handler';
 import DatePicker from 'react-native-datepicker';
-import {useFormik} from 'formik';
 import ImagePicker from 'react-native-image-picker';
 import * as yup from 'yup';
+import {useFormik} from 'formik';
+import ErrorText from '../../components/errorText';
+import * as _ from 'lodash';
+import Axios from 'axios';
+import {useSelector} from 'react-redux';
+import moment from 'moment';
 
 const options = {
   title: 'Select Avatar',
@@ -23,7 +29,7 @@ const options = {
 };
 
 const CreateMovieScreen = () => {
-  const [avatarSource, setavatarSource] = useState();
+  const userInfo = useSelector((state) => state?.userInfo?.data);
   const movieSchema = yup.object().shape({
     tenPhim: yup
       .string()
@@ -37,6 +43,7 @@ const CreateMovieScreen = () => {
       .string()
       .required('Trailer bat buoc nhap')
       .url('Trailer phai la link hop le'),
+    moTa: yup.string().required('Mo ta bat buoc nhap'),
   });
 
   const formik = useFormik({
@@ -47,7 +54,7 @@ const CreateMovieScreen = () => {
       hinhAnh: '',
       moTa: '',
       maNhom: 'GP01',
-      ngayKhoiChieu: 'null',
+      ngayKhoiChieu: new Date(),
       danhGia: 0,
     },
     validationSchema: movieSchema,
@@ -56,8 +63,6 @@ const CreateMovieScreen = () => {
 
   const pickImage = () => {
     ImagePicker.showImagePicker(options, (response) => {
-      console.log('Response = ', response);
-
       if (response.didCancel) {
         console.log('User cancelled image picker');
       } else if (response.error) {
@@ -65,18 +70,60 @@ const CreateMovieScreen = () => {
       } else if (response.customButton) {
         console.log('User tapped custom button: ', response.customButton);
       } else {
-        const source = {uri: response.uri};
+        // Lấy đường dẫn path ảnh trong điện thoại
+        const uploadUri =
+          Platform.OS === 'ios'
+            ? response.uri.replace('file://', '')
+            : 'file://' + response.path;
+        const sourceImg = {
+          uri: uploadUri,
+          name: 'img.jpg',
+          type: 'img/jpg',
+        };
 
-        // You can also display the image using data:
-        // const source = { uri: 'data:image/jpeg;base64,' + response.data };
+        // Nếu muốn gửi file lên server thông qua axios thì phải tạo 1 form data
+        const data = new FormData();
+        data.append('file', sourceImg);
+        data.append('upload_preset', 'vule123');
 
-        setavatarSource(source);
+        // Call Axios, data chính là data đã tạo ra từ formData ở trên
+        // Axios({
+        //   method: 'POST',
+        //   url: 'https://api.cloudinary.com/v1_1/vule123/image/upload',
+        //   data: data,
+        // })
+        //   .then((res) => {
+        //     formik.setFieldValue('hinhAnh', res.data.url);
+        //   })
+        //   .catch((err) => console.log('err anh', {...err}));
       }
     });
   };
   const handleSubmit = () => {
-    console.log('formik', formik.values);
-    console.log('err', formik.errors);
+    if (!_.isEmpty(formik.errors)) {
+      return;
+    }
+
+    const body = {...formik.values};
+
+    //format lại định dạng ngày khởi chiếu thành DD-MM-YYYY
+    // body.ngayKhoiChieu = `${releaseDate.getDate()}-${
+    //   releaseDate.getMonth() + 1
+    // }-${releaseDate.getFullYear()}`;
+    body.ngayKhoiChieu = moment(body.ngayKhoiChieu).format('DD/MM/YYYY');
+    body.hinhAnh =
+      'https://lh3.googleusercontent.com/proxy/FaCpogZop2iCrbQu3fU_k1SKDUqdmePYgiY2edNYRYF1dz7ycPGIPO0d7QLZEQPH3TnGlKFjfnc_-tkxNA_XpU77sBAp63ZSurl-lw2NR3f2';
+
+    Axios({
+      method: 'POST',
+      url: 'http://movie0706.cybersoft.edu.vn/api/QuanLyPhim/ThemPhim',
+      data: body,
+      headers: {
+        Authorization: `Bearer ${userInfo?.accssToken}`,
+      },
+    })
+      .then((res) => console.log('res', res))
+      .catch((err) => console.log('err', {...err}));
   };
 
   return (
@@ -85,6 +132,7 @@ const CreateMovieScreen = () => {
         <View style={styles.content}>
           <View style={styles.form}>
             <TextInput
+              onBlur={formik.handleBlur('tenPhim')} // kiểm tra đã click vào hay chưa
               style={styles.formControl}
               placeholder="Tên phim"
               placeholderTextColor="#fff"
@@ -93,8 +141,13 @@ const CreateMovieScreen = () => {
               autoCapitalize="none" // tắt tự động viết hoa chữ cái đầu input
               onChangeText={formik.handleChange('tenPhim')}
             />
+            <ErrorText
+              touched={formik.touched.tenPhim}
+              error={formik.errors.tenPhim}
+            />
 
             <TextInput
+              onBlur={formik.handleBlur('biDanh')} // kiểm tra đã click vào hay chưa
               style={styles.formControl}
               placeholder="Bí danh"
               placeholderTextColor="#fff"
@@ -104,8 +157,13 @@ const CreateMovieScreen = () => {
               returnKeyType="done"
               onChangeText={formik.handleChange('biDanh')}
             />
+            <ErrorText
+              touched={formik.touched.biDanh}
+              error={formik.errors.biDanh}
+            />
 
             <TextInput
+              onBlur={formik.handleBlur('trailer')} // kiểm tra đã click vào hay chưa
               style={styles.formControl}
               placeholder="Trailer"
               placeholderTextColor="#fff"
@@ -115,6 +173,11 @@ const CreateMovieScreen = () => {
               returnKeyType="done"
               onChangeText={formik.handleChange('trailer')}
             />
+            <ErrorText
+              touched={formik.touched.trailer}
+              error={formik.errors.trailer}
+            />
+
             <View>
               <Button
                 title="Pick image"
@@ -125,6 +188,7 @@ const CreateMovieScreen = () => {
             </View>
 
             <TextInput
+              onBlur={formik.handleBlur('moTa')} // kiểm tra đã click vào hay chưa
               style={styles.formControl}
               placeholder="Mô tả"
               placeholderTextColor="#fff"
@@ -134,10 +198,14 @@ const CreateMovieScreen = () => {
               returnKeyType="done"
               onChangeText={formik.handleChange('moTa')}
             />
+            <ErrorText
+              touched={formik.touched.moTa}
+              error={formik.errors.moTa}
+            />
 
             <DatePicker
               style={{width: '100%', marginBottom: 20}}
-              date={new Date()}
+              date={new Date(formik.values.ngayKhoiChieu)}
               mode="date"
               placeholder="select date"
               format="YYYY-MM-DD"
@@ -160,6 +228,7 @@ const CreateMovieScreen = () => {
             />
 
             <TextInput
+              onBlur={formik.handleBlur('danhGia')} // kiểm tra đã click vào hay chưa
               style={styles.formControl}
               placeholder="Đánh giá"
               placeholderTextColor="#fff"
@@ -168,6 +237,10 @@ const CreateMovieScreen = () => {
               autoCapitalize="none" // tắt tự động viết hoa chữ cái đầu input
               returnKeyType="done"
               onChangeText={formik.handleChange('danhGia')}
+            />
+            <ErrorText
+              touched={formik.touched.danhGia}
+              error={formik.errors.danhGia}
             />
 
             <Button
@@ -214,6 +287,10 @@ const styles = StyleSheet.create({
 
   btn: {
     height: 50,
+  },
+
+  errorText: {
+    color: 'red',
   },
 });
 
